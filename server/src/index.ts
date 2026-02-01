@@ -1,4 +1,4 @@
-import chokidar from 'chokidar';
+import chokidar, { FSWatcher } from 'chokidar';
 import fs from 'node:fs';
 import path from 'node:path';
 import toml from 'smol-toml';
@@ -9,8 +9,11 @@ interface ResourceConfig {
   server_script?: string | string[];
 }
 
+// Store active watchers so we can stop them later
+const activeWatchers = new Map<string, FSWatcher>();
+
 /**
- * Normalizes the config values into a flat array of absolute paths.
+ * Normalizes the config values into absolute paths.
  */
 const resolveBuildPaths = (
   basePath: string,
@@ -21,83 +24,100 @@ const resolveBuildPaths = (
   return entries.map((file) => path.resolve(basePath, file));
 };
 
-async function initResourceWatchers(): Promise<void> {
-  const resourcesDir = path.resolve('./resources');
+/**
+ * Logic to start watching a specific resource
+ */
+function startResourceWatcher(resourceName: string): void {
+  // Prevent duplicate watchers
+  if (activeWatchers.has(resourceName)) {
+    return;
+  }
 
-  if (!fs.existsSync(resourcesDir)) {
-    console.error('[Hotreload] Resources folder not found.');
+  const resourcePath = path.resolve('./resources', resourceName);
+  const tomlPath = path.join(resourcePath, 'resource.toml');
+
+  if (!fs.existsSync(tomlPath)) {
     return;
   }
 
   try {
-    const entries = fs.readdirSync(resourcesDir, { withFileTypes: true });
+    const config: ResourceConfig = toml.parse(
+      fs.readFileSync(tomlPath, 'utf-8'),
+    );
 
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
+    if (config.hotreload === true) {
+      const watchTargets = [
+        ...resolveBuildPaths(resourcePath, config.client_script),
+        ...resolveBuildPaths(resourcePath, config.server_script),
+      ];
 
-      const resourcePath = path.join(resourcesDir, entry.name);
-      const tomlPath = path.join(resourcePath, 'resource.toml');
+      if (watchTargets.length === 0) return;
 
-      if (!fs.existsSync(tomlPath)) continue;
+      const watcher = chokidar.watch(watchTargets, {
+        persistent: true,
+        ignoreInitial: true,
+        usePolling: process.env.IS_DOCKER === 'true',
+        interval: 100,
+        binaryInterval: 300,
+        awaitWriteFinish: {
+          stabilityThreshold: 400,
+          pollInterval: 100,
+        },
+      });
 
-      const config: ResourceConfig = toml.parse(
-        fs.readFileSync(tomlPath, 'utf-8'),
-      );
+      watcher.on('change', (filePath: string) => {
+        console.log(
+          `[Hotreload] Change in ${path.basename(filePath)}. Restarting ${resourceName}...`,
+        );
 
-      if (config.hotreload === true) {
-        // Collect only the specific build files defined in TOML
-        const watchTargets = [
-          ...resolveBuildPaths(resourcePath, config.client_script),
-          ...resolveBuildPaths(resourcePath, config.server_script),
-        ];
-
-        if (watchTargets.length > 0) {
-          setupWatcher(entry.name, watchTargets);
+        if (typeof mp !== 'undefined' && mp.restartResource) {
+          mp.restartResource(resourceName);
         }
-      }
+      });
+
+      activeWatchers.set(resourceName, watcher);
+      console.log(
+        `[Hotreload] Started watching: ${resourceName} (${watchTargets.length} files)`,
+      );
     }
   } catch (err) {
-    console.error('[Hotreload] Failed to initialize watchers:', err);
+    console.error(
+      `[Hotreload] Failed to parse config for ${resourceName}:`,
+      err,
+    );
   }
 }
 
-function setupWatcher(resourceName: string, files: string[]): void {
-  const watcher = chokidar.watch(files, {
-    persistent: true,
-    ignoreInitial: true,
-    usePolling: process.env.IS_DOCKER === 'true',
-    interval: 100, // How often to check in ms
-    binaryInterval: 300,
-    awaitWriteFinish: {
-      stabilityThreshold: 400,
-      pollInterval: 100,
-    },
-  });
+/**
+ * Logic to stop watching a resource
+ */
+async function stopResourceWatcher(resourceName: string): Promise<void> {
+  const watcher = activeWatchers.get(resourceName);
 
-  console.log(
-    `[Hotreload] Monitoring ${files.length} build files for: ${resourceName}`,
-  );
-
-  watcher.on('change', (filePath: string) => {
-    const fileName = path.basename(filePath);
-    console.log(
-      `[Hotreload] Detected change in ${fileName}. Restarting ${resourceName}...`,
-    );
-
-    if (typeof mp !== 'undefined' && mp.restartResource) {
-      mp.restartResource(resourceName);
-    } else {
-      console.error(`[Hotreload] Failed to restart ${resourceName}`);
-    }
-  });
-
-  watcher.on('error', (error) => {
-    console.error(`[Hotreload] Watcher error for ${resourceName}:`, error);
-  });
+  if (watcher) {
+    await watcher.close();
+    activeWatchers.delete(resourceName);
+    console.log(`[Hotreload] Stopped watching: ${resourceName}`);
+  }
 }
 
+// Initialize Lifecycle Listeners
 if (process.env.NODE_ENV === 'development') {
-  console.log('[Hotreload] Enabling in development (NODE_ENV === development)');
+  console.log(
+    '[Hotreload] System Active (Listening for resource lifecycle events)',
+  );
 
-  initResourceWatchers();
+  mp.events.on('onServerResourceStarted', (resName: string) => {
+    startResourceWatcher(resName);
+  });
+
+  mp.events.on('onServerResourceStopped', (resName: string) => {
+    stopResourceWatcher(resName);
+  });
+
+  mp.events.on('onResourceStopped', () => {
+    for (const resName of activeWatchers.keys()) {
+      stopResourceWatcher(resName);
+    }
+  });
 }
