@@ -1,16 +1,25 @@
 import { defineConfig } from 'vite';
+import packageJson from './package.json';
+
+const dependencies = Object.keys({
+  ...packageJson.dependencies,
+  ...packageJson.devDependencies,
+});
+
+const noExternal = process.env.NODE_ENV === 'production' ? dependencies : [];
 
 export default defineConfig({
   build: {
-    minify: false,
-    sourcemap: false,
-
-    lib: {
-      name: 'index',
-      entry: 'src/index.ts',
-      formats: ['iife'],
-      fileName: 'index',
+    ssr: './src/index.ts',
+    rollupOptions: {
+      output: {
+        format: 'cjs',
+        entryFileNames: `[name].cjs`,
+      },
     },
-    polyfillModulePreload: false,
+  },
+  ssr: {
+    noExternal,
+    target: 'node',
   },
 });

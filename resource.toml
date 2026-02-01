@@ -4,7 +4,7 @@ version = "1.0.0"
 
 # ui_page = "http://localhost:5173"
 
-client_script = "./client/dist/index.iife.js"
+# client_script = "./client/dist/index.iife.js"
 server_script = ["./server/dist/index.iife.js"]
 
 # use_game_natives = "true"

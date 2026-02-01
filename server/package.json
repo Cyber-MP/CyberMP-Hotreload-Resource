@@ -10,10 +10,15 @@
   "license": "MIT",
   "description": "",
   "devDependencies": {
-    "@cybermp/server-types": "^1.1.1",
+    "@cybermp/server-types": "^1.1.11",
+    "@types/node": "^25.2.0",
     "cross-env": "^7.0.3",
     "prettier": "^3.6.2",
     "typescript": "^5.8.3",
     "vite": "^7.3.0"
+  },
+  "dependencies": {
+    "chokidar": "^5.0.0",
+    "smol-toml": "^1.6.0"
   }
 }
