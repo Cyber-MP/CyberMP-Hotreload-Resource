@@ -1,6 +1,6 @@
 import chokidar from 'chokidar';
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import toml from 'smol-toml';
 
 interface ResourceConfig {
@@ -62,12 +62,14 @@ async function initResourceWatchers(): Promise<void> {
 }
 
 function setupWatcher(resourceName: string, files: string[]): void {
-  // Chokidar is highly efficient at watching specific file lists
   const watcher = chokidar.watch(files, {
     persistent: true,
     ignoreInitial: true,
+    usePolling: process.env.IS_DOCKER === 'true',
+    interval: 100, // How often to check in ms
+    binaryInterval: 300,
     awaitWriteFinish: {
-      stabilityThreshold: 400, // Ensures build tool has finished writing
+      stabilityThreshold: 400,
       pollInterval: 100,
     },
   });
@@ -82,14 +84,10 @@ function setupWatcher(resourceName: string, files: string[]): void {
       `[Hotreload] Detected change in ${fileName}. Restarting ${resourceName}...`,
     );
 
-    try {
-      // @ts-ignore - mp is globally injected by the server environment
-      if (typeof mp !== 'undefined' && mp.restartResource) {
-        // @ts-ignore
-        mp.restartResource(resourceName);
-      }
-    } catch (err) {
-      console.error(`[Hotreload] Failed to restart ${resourceName}:`, err);
+    if (typeof mp !== 'undefined' && mp.restartResource) {
+      mp.restartResource(resourceName);
+    } else {
+      console.error(`[Hotreload] Failed to restart ${resourceName}`);
     }
   });
 
@@ -98,7 +96,8 @@ function setupWatcher(resourceName: string, files: string[]): void {
   });
 }
 
-// Execution
 if (process.env.NODE_ENV === 'development') {
+  console.log('[Hotreload] Enabling in development (NODE_ENV === development)');
+
   initResourceWatchers();
 }
