@@ -2,12 +2,15 @@ name: Build and Package
 
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch: # Allows manual trigger from UI
 
 jobs:
   build-and-pack:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout code
@@ -26,8 +29,7 @@ jobs:
 
       - name: Get pnpm store directory
         shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
 
       - name: Setup pnpm cache
         uses: actions/cache@v4
@@ -46,12 +48,18 @@ jobs:
         working-directory: ./server
 
       - name: Create Zip Archive
+        # Use -j for resource.toml so it sits at the root of the zip alongside the dist folder
         run: |
-          # Zip the dist folder contents and the toml file
           zip -r resource.zip server/dist resource.toml
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
         with:
-          name: deployment-package
-          path: resource.zip
+          # Uses the actual tag name (e.g., v1.0.2) for the release
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          draft: true
+          files: resource.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
