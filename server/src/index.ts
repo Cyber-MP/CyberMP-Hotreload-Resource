@@ -12,6 +12,8 @@ interface ResourceConfig {
 // Store active watchers so we can stop them later
 const activeWatchers = new Map<string, FSWatcher>();
 
+const reloadingPool = new Set<string>();
+
 /**
  * Normalizes the config values into absolute paths.
  */
@@ -56,22 +58,36 @@ function startResourceWatcher(resourceName: string): void {
       const watcher = chokidar.watch(watchTargets, {
         persistent: true,
         ignoreInitial: true,
-        usePolling: process.env.IS_DOCKER === 'true',
-        interval: 100,
-        binaryInterval: 300,
+        ...(process.env.IS_DOCKER === 'true'
+          ? {
+              usePolling: true,
+              interval: 200,
+              binaryInterval: 500,
+            }
+          : {}),
+
         awaitWriteFinish: {
-          stabilityThreshold: 400,
+          stabilityThreshold: 400, // Ensures build tool has finished writing
           pollInterval: 100,
         },
       });
 
       watcher.on('change', (filePath: string) => {
+        if (reloadingPool.has(resourceName)) {
+          return;
+        }
+
         console.log(
           `[Hotreload] Change in ${path.basename(filePath)}. Restarting ${resourceName}...`,
         );
 
         if (typeof mp !== 'undefined' && mp.restartResource) {
+          reloadingPool.add(resourceName);
+
           mp.restartResource(resourceName);
+
+          // reloadingPool.delete(resourceName);
+          // console.log(reloadingPool);
         }
       });
 
@@ -108,14 +124,27 @@ if (process.env.NODE_ENV === 'development') {
   );
 
   mp.events.on('onServerResourceStarted', (resName: string) => {
+    if (reloadingPool.has(resName)) {
+      reloadingPool.delete(resName);
+      return;
+    }
+
     startResourceWatcher(resName);
   });
 
   mp.events.on('onServerResourceStopped', (resName: string) => {
+    if (reloadingPool.has(resName)) {
+      return;
+    }
+
     stopResourceWatcher(resName);
   });
 
-  mp.events.on('onResourceStopped', () => {
+  mp.events.on('onResourceStopped', (res) => {
+    if (res !== 'hotreload') {
+      return;
+    }
+
     for (const resName of activeWatchers.keys()) {
       stopResourceWatcher(resName);
     }
