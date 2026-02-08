@@ -67,7 +67,7 @@ function startResourceWatcher(resourceName: string): void {
           : {}),
 
         awaitWriteFinish: {
-          stabilityThreshold: 400, // Ensures build tool has finished writing
+          stabilityThreshold: 400,
           pollInterval: 100,
         },
       });
