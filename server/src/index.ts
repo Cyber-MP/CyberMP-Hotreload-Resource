@@ -120,7 +120,7 @@ if (process.env.NODE_ENV === "development") {
 		"[Hotreload] System Active (Listening for resource lifecycle events)",
 	);
 
-	mp.events.on("onServerResourceStarted", (resName: string) => {
+	mp.events.on("anyServerResourceStart", (resName: string) => {
 		if (reloadingPool.has(resName)) {
 			reloadingPool.delete(resName);
 			return;
@@ -129,7 +129,7 @@ if (process.env.NODE_ENV === "development") {
 		startResourceWatcher(resName);
 	});
 
-	mp.events.on("onServerResourceStopped", (resName: string) => {
+	mp.events.on("anyServerResourceStop", (resName: string) => {
 		if (reloadingPool.has(resName)) {
 			return;
 		}
@@ -137,11 +137,7 @@ if (process.env.NODE_ENV === "development") {
 		stopResourceWatcher(resName);
 	});
 
-	mp.events.on("onResourceStopped", (res) => {
-		if (res !== "hotreload") {
-			return;
-		}
-
+	mp.events.on("resourceStop", () => {
 		for (const resName of activeWatchers.keys()) {
 			stopResourceWatcher(resName);
 		}
