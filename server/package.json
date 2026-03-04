@@ -1,16 +1,18 @@
 {
   "name": "server",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "type": "module",
   "scripts": {
-    "build": "tsc && vite build"
+    "build": "tsc && vite build",
+    "bump": "bumpp"
   },
   "keywords": [],
   "license": "MIT",
   "description": "",
   "devDependencies": {
-    "@cybermp/server-types": "^1.1.11",
+    "@cybermp/server-types": "^2.1.0",
     "@types/node": "^25.2.0",
+    "bumpp": "^10.4.1",
     "cross-env": "^7.0.3",
     "prettier": "^3.6.2",
     "typescript": "^5.8.3",
